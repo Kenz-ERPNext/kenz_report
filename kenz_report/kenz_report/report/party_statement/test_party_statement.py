@@ -173,11 +173,7 @@ class TestPartyStatement(FrappeTestCase):
         ])
 
     def test_execute_returns_list_data(self):
-        # Use a narrow date range in the distant past where no test data exists
-        filters = self._base_filters()
-        filters["from_date"] = "2000-01-01"
-        filters["to_date"] = "2000-01-31"
-        columns, data = execute(filters)
+        columns, data = execute(self._base_filters())
         self.assertEqual(data, [])
 
     def test_from_date_after_to_date_raises(self):
@@ -285,31 +281,9 @@ class TestPartyStatement(FrappeTestCase):
     def test_opening_balance_from_pre_period_invoice(self):
         customer = _make_customer("OB")
         company = self._base_filters()["company"]
-        receivable = frappe.get_cached_value("Company", company, "default_receivable_account")
-        # Insert a GL Entry directly so we bypass Sales Invoice payment-term validation
-        # while still exercising the opening-balance query against tabGL Entry
-        frappe.db.sql("""
-            INSERT INTO `tabGL Entry`
-                (name, creation, modified, modified_by, owner, docstatus,
-                 company, account, party_type, party, posting_date,
-                 debit, credit, is_cancelled, voucher_type, voucher_no,
-                 remarks, fiscal_year, cost_center)
-            VALUES
-                (%(name)s, NOW(), NOW(), 'Administrator', 'Administrator', 1,
-                 %(company)s, %(account)s, 'Customer', %(party)s, %(posting_date)s,
-                 250, 0, 0, 'Sales Invoice', %(name)s,
-                 'Test opening balance entry', %(fiscal_year)s,
-                 (SELECT cost_center_name FROM `tabCost Center`
-                  WHERE company=%(company)s AND is_group=0 LIMIT 1))
-        """, {
-            "name": f"_PS-OB-GLE-{customer}",
-            "company": company,
-            "account": receivable,
-            "party": customer,
-            "posting_date": add_days(today(), -60),
-            "fiscal_year": frappe.db.get_value("Fiscal Year", {}, "name"),
-        })
-        frappe.db.commit()
+        # Pre-period activity: submit a Journal Entry against the receivable account
+        # 60 days before from_date. This posts to GL Entry, contributing to opening balance.
+        _make_journal_entry(customer, company, add_days(today(), -60), debit_amount=250)
 
         filters = self._base_filters()
         filters["customer"] = customer
