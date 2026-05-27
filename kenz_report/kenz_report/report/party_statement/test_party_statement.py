@@ -17,12 +17,13 @@ class TestPartyStatement(FrappeTestCase):
 
     def test_execute_returns_eight_columns(self):
         columns, data = execute(self._base_filters())
-        labels = [c["label"] for c in columns]
-        self.assertEqual(labels, [
-            "TRX Date", "TRX No / Inv No", "Tran-Type",
-            "TRX Amount", "Paid Amount", "Debit", "Credit", "Balance",
+        self.assertEqual(len(columns), 8)
+        fieldnames = [c["fieldname"] for c in columns]
+        self.assertEqual(fieldnames, [
+            "posting_date", "voucher_no", "tran_type",
+            "trx_amount", "paid_amount", "debit", "credit", "balance",
         ])
 
     def test_execute_returns_list_data(self):
         columns, data = execute(self._base_filters())
-        self.assertIsInstance(data, list)
+        self.assertEqual(data, [])
