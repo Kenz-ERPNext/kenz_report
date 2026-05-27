@@ -106,11 +106,67 @@ def _get_opening_balance(filters, customer):
     return flt(result[0]["opening"]) if result else 0.0
 
 
+def _group_header_row(customer, customer_name, address, mobile):
+    return {
+        "customer": customer,
+        "customer_name": customer_name,
+        "address_display": address,
+        "mobile_no": mobile,
+        "posting_date": None,
+        "voucher_type": None,
+        "voucher_no": "",
+        "tran_type": "",
+        "trx_amount": 0.0,
+        "paid_amount": 0.0,
+        "debit": 0.0,
+        "credit": 0.0,
+        "balance": 0.0,
+        "is_group_header": 1,
+    }
+
+
+def _customer_contact_info(customer):
+    address = ""
+    mobile = ""
+    try:
+        from frappe.contacts.doctype.address.address import get_default_address
+        addr_name = get_default_address("Customer", customer)
+        if addr_name:
+            address = frappe.db.get_value("Address", addr_name, "address_line1") or ""
+            city = frappe.db.get_value("Address", addr_name, "city") or ""
+            if city:
+                address = f"{address}, {city}" if address else city
+    except Exception:
+        pass
+    try:
+        contact_name = frappe.db.get_value(
+            "Dynamic Link",
+            {"parenttype": "Contact", "link_doctype": "Customer", "link_name": customer},
+            "parent",
+        )
+        if contact_name:
+            mobile = frappe.db.get_value("Contact", contact_name, "mobile_no") or ""
+    except Exception:
+        pass
+    return address, mobile
+
+
 def _customers_in_data(filters, body_rows):
     """Return the set of customers in the data, respecting the customer filter."""
     if filters.get("customer"):
         return [filters.customer]
-    return sorted({r["customer"] for r in body_rows if r.get("customer")})
+    body_customers = {r["customer"] for r in body_rows if r.get("customer")}
+    receivable = _get_receivable_account(filters.company)
+    opening_customers = frappe.db.sql_list("""
+        SELECT DISTINCT party FROM `tabGL Entry`
+        WHERE company = %(company)s
+          AND account = %(receivable_account)s
+          AND party_type = 'Customer'
+          AND posting_date < %(from_date)s
+          AND is_cancelled = 0
+    """, {"company": filters.company, "receivable_account": receivable,
+          "from_date": filters.from_date})
+    return sorted(body_customers | set(opening_customers))
 
 
 def _opening_row(customer, customer_name, opening):
@@ -126,6 +182,7 @@ def _opening_row(customer, customer_name, opening):
         "debit": 0.0,
         "credit": 0.0,
         "balance": opening,
+        "is_opening": 1,
     }
 
 
@@ -142,6 +199,7 @@ def _closing_row(customer, customer_name, total_debit, total_credit, balance):
         "debit": total_debit,
         "credit": total_credit,
         "balance": balance,
+        "is_closing": 1,
     }
 
 
@@ -162,9 +220,10 @@ def _get_data(filters):
 
     for customer in customers:
         customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+        address, mobile = _customer_contact_info(customer)
+        final.append(_group_header_row(customer, customer_name, address, mobile))
         opening = _get_opening_balance(filters, customer)
-        opening_row = _opening_row(customer, customer_name, opening)
-        final.append(opening_row)
+        final.append(_opening_row(customer, customer_name, opening))
 
         rows = sorted(body_by_customer.get(customer, []),
                       key=lambda r: (r["posting_date"], r["voucher_no"]))

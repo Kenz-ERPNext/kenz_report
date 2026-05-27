@@ -326,3 +326,33 @@ class TestPartyStatement(FrappeTestCase):
         self.assertEqual(closing[0]["debit"], 200)
         self.assertEqual(closing[0]["credit"], 50)
         self.assertEqual(closing[0]["balance"], 150)
+
+    def test_multi_customer_two_separate_blocks(self):
+        company = self._base_filters()["company"]
+        cust_a = _make_customer("MultA")
+        cust_b = _make_customer("MultB")
+        _make_sales_invoice(cust_a, company, today(), 100)
+        _make_sales_invoice(cust_b, company, today(), 200)
+
+        # No customer filter — both should appear
+        columns, data = execute(self._base_filters())
+
+        customers_seen = [r["customer"] for r in data
+                          if r["tran_type"] in ("OPENING BALANCE", "CLOSING BALANCE")]
+        # Each customer contributes 1 opening + 1 closing row
+        self.assertGreaterEqual(customers_seen.count(cust_a), 2)
+        self.assertGreaterEqual(customers_seen.count(cust_b), 2)
+
+    def test_group_header_row_carries_customer_info(self):
+        customer = _make_customer("GH")
+        company = self._base_filters()["company"]
+        _make_sales_invoice(customer, company, today(), 100)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+
+        headers = [r for r in data if r.get("is_group_header")]
+        self.assertEqual(len(headers), 1)
+        self.assertEqual(headers[0]["customer"], customer)
+        self.assertIn("customer_name", headers[0])
