@@ -409,3 +409,18 @@ class TestPartyStatement(FrappeTestCase):
         self.assertIn(cust_a, html)
         self.assertIn(cust_b, html)
         self.assertIn("page-break-after", html)
+
+    def test_customers_with_zero_opening_and_no_body_excluded(self):
+        customer = _make_customer("ZeroNet")
+        company = self._base_filters()["company"]
+        # Use Journal Entries to post a debit and matching credit on the
+        # receivable account strictly before the report period (today-60 days).
+        # Using JEs avoids the Sales Invoice posting_date being overridden by
+        # ZATCA/ksa_compliance hooks on this site.
+        _make_journal_entry(customer, company, add_days(today(), -60), debit_amount=100)
+        _make_journal_entry(customer, company, add_days(today(), -60), credit_amount=100)
+
+        # Net opening balance for this customer = 0; no in-period activity.
+        columns, data = execute(self._base_filters())
+        customers_seen = {r.get("customer") for r in data if r.get("customer")}
+        self.assertNotIn(customer, customers_seen)

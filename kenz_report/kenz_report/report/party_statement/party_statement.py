@@ -170,7 +170,7 @@ def _customers_in_data(filters, body_rows):
     receivable = _get_receivable_account(filters.company)
     extra_join, extra_where = _customer_scope_join_and_clause(filters, "gle.party")
     sql = f"""
-        SELECT DISTINCT gle.party
+        SELECT gle.party
         FROM `tabGL Entry` gle
         LEFT JOIN `tabCustomer` c ON c.name = gle.party
         {extra_join}
@@ -180,6 +180,8 @@ def _customers_in_data(filters, body_rows):
           AND gle.posting_date < %(from_date)s
           AND gle.is_cancelled = 0
           {extra_where}
+        GROUP BY gle.party
+        HAVING ABS(SUM(gle.debit - gle.credit)) > 0.005
     """
     params = {
         "company": filters.company,
