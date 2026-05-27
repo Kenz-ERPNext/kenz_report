@@ -86,13 +86,73 @@ def _get_payment_entry_rows(filters):
     return frappe.db.sql(sql, filters, as_dict=True)
 
 
+def _get_opening_balance(filters, customer):
+    sql = """
+        SELECT IFNULL(SUM(debit - credit), 0) AS opening
+        FROM `tabGL Entry`
+        WHERE company = %(company)s
+          AND account = %(receivable_account)s
+          AND party_type = 'Customer'
+          AND party = %(customer)s
+          AND posting_date < %(from_date)s
+          AND is_cancelled = 0
+    """
+    result = frappe.db.sql(sql, {
+        "company": filters.company,
+        "receivable_account": _get_receivable_account(filters.company),
+        "customer": customer,
+        "from_date": filters.from_date,
+    }, as_dict=True)
+    return flt(result[0]["opening"]) if result else 0.0
+
+
+def _customers_in_data(filters, body_rows):
+    """Return the set of customers in the data, respecting the customer filter."""
+    if filters.get("customer"):
+        return [filters.customer]
+    return sorted({r["customer"] for r in body_rows if r.get("customer")})
+
+
+def _opening_row(customer, customer_name, opening):
+    return {
+        "customer": customer,
+        "customer_name": customer_name,
+        "posting_date": None,
+        "voucher_type": None,
+        "voucher_no": "",
+        "tran_type": "OPENING BALANCE",
+        "trx_amount": 0.0,
+        "paid_amount": 0.0,
+        "debit": 0.0,
+        "credit": 0.0,
+        "balance": opening,
+    }
+
+
 def _get_data(filters):
-    rows = []
-    rows.extend(_get_sales_invoice_rows(filters, is_return=0))
-    rows.extend(_get_sales_invoice_rows(filters, is_return=1))
-    rows.extend(_get_payment_entry_rows(filters))
-    rows.extend(_get_journal_entry_rows(filters))
-    return [_normalize_row(r) for r in rows]
+    body = []
+    body.extend(_get_sales_invoice_rows(filters, is_return=0))
+    body.extend(_get_sales_invoice_rows(filters, is_return=1))
+    body.extend(_get_payment_entry_rows(filters))
+    body.extend(_get_journal_entry_rows(filters))
+    body = [_normalize_row(r) for r in body]
+
+    customers = _customers_in_data(filters, body)
+    final = []
+    body_by_customer = {c: [] for c in customers}
+    for row in body:
+        if row["customer"] in body_by_customer:
+            body_by_customer[row["customer"]].append(row)
+
+    for customer in customers:
+        customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+        opening = _get_opening_balance(filters, customer)
+        final.append(_opening_row(customer, customer_name, opening))
+        rows = sorted(body_by_customer.get(customer, []),
+                      key=lambda r: (r["posting_date"], r["voucher_no"]))
+        final.extend(rows)
+
+    return final
 
 
 def _customer_filter_clause(filters, table_alias):
