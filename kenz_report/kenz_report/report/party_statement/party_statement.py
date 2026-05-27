@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 
 def _validate_filters(filters):
@@ -15,7 +16,86 @@ def execute(filters=None):
     filters = frappe._dict(filters or {})
     _validate_filters(filters)
     columns = _get_columns(filters)
-    return columns, []
+    data = _get_data(filters)
+    return columns, data
+
+
+def _get_data(filters):
+    rows = []
+    rows.extend(_get_sales_invoice_rows(filters, is_return=0))
+    return [_normalize_row(r) for r in rows]
+
+
+def _customer_filter_clause(filters, table_alias):
+    if filters.get("customer"):
+        return f" AND {table_alias}.customer = %(customer)s "
+    return ""
+
+
+def _payment_amount_subquery():
+    return (
+        "(SELECT IFNULL(SUM(per.allocated_amount), 0) "
+        " FROM `tabPayment Entry Reference` per "
+        " JOIN `tabPayment Entry` pe ON pe.name = per.parent "
+        " WHERE per.reference_doctype = 'Sales Invoice' "
+        "   AND per.reference_name = si.name "
+        "   AND pe.docstatus = 1)"
+    )
+
+
+def _get_sales_invoice_rows(filters, is_return):
+    tran_type = "SALESRETURN" if is_return else "SALES"
+    customer_clause = _customer_filter_clause(filters, "si")
+    if is_return:
+        amount_expr = "ABS(si.grand_total)"
+        debit_expr = "0"
+        credit_expr = amount_expr
+        paid_expr = "0"
+    else:
+        amount_expr = "si.grand_total"
+        debit_expr = amount_expr
+        credit_expr = "0"
+        paid_expr = _payment_amount_subquery()
+    sql = f"""
+        SELECT si.customer AS customer,
+               si.customer_name AS customer_name,
+               si.posting_date AS posting_date,
+               'Sales Invoice' AS voucher_type,
+               si.name AS voucher_no,
+               %(tran_type)s AS tran_type,
+               {amount_expr} AS trx_amount,
+               {paid_expr} AS paid_amount,
+               {debit_expr} AS debit,
+               {credit_expr} AS credit
+        FROM `tabSales Invoice` si
+        WHERE si.docstatus = 1
+          AND si.company = %(company)s
+          AND si.is_return = %(is_return)s
+          AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+          {customer_clause}
+        ORDER BY si.posting_date, si.name
+    """
+    return frappe.db.sql(sql, {
+        **filters,
+        "is_return": is_return,
+        "tran_type": tran_type,
+    }, as_dict=True)
+
+
+def _normalize_row(row):
+    return {
+        "customer": row.get("customer"),
+        "customer_name": row.get("customer_name"),
+        "posting_date": row.get("posting_date"),
+        "voucher_type": row.get("voucher_type"),
+        "voucher_no": row.get("voucher_no"),
+        "tran_type": row.get("tran_type"),
+        "trx_amount": flt(row.get("trx_amount")),
+        "paid_amount": flt(row.get("paid_amount")),
+        "debit": flt(row.get("debit")),
+        "credit": flt(row.get("credit")),
+        "balance": 0.0,
+    }
 
 
 def _get_columns(filters):

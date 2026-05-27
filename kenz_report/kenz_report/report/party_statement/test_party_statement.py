@@ -164,3 +164,21 @@ class TestPartyStatement(FrappeTestCase):
         si = _make_sales_invoice(customer, self._base_filters()["company"], today(), 100)
         self.assertEqual(si.docstatus, 1)
         self.assertEqual(si.customer, customer)
+
+    def test_sales_invoice_appears_as_sales_row(self):
+        customer = _make_customer("SI")
+        company = self._base_filters()["company"]
+        si = _make_sales_invoice(customer, company, today(), 500)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+
+        sales_rows = [r for r in data if r.get("tran_type") == "SALES"]
+        self.assertEqual(len(sales_rows), 1)
+        row = sales_rows[0]
+        self.assertEqual(row["voucher_no"], si.name)
+        self.assertEqual(row["voucher_type"], "Sales Invoice")
+        self.assertEqual(row["debit"], 500)
+        self.assertEqual(row["credit"], 0)
+        self.assertEqual(row["trx_amount"], 500)
