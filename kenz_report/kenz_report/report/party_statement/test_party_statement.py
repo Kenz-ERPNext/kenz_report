@@ -27,3 +27,18 @@ class TestPartyStatement(FrappeTestCase):
     def test_execute_returns_list_data(self):
         columns, data = execute(self._base_filters())
         self.assertEqual(data, [])
+
+    def test_from_date_after_to_date_raises(self):
+        filters = self._base_filters()
+        filters["from_date"] = today()
+        filters["to_date"] = add_days(today(), -10)
+        with self.assertRaises(frappe.ValidationError):
+            execute(filters)
+
+    def test_missing_company_raises(self):
+        with self.assertRaises(frappe.ValidationError):
+            execute({"from_date": today(), "to_date": today()})
+
+    def test_missing_dates_raise(self):
+        with self.assertRaises(frappe.ValidationError):
+            execute({"company": self._base_filters()["company"]})

@@ -2,8 +2,18 @@ import frappe
 from frappe import _
 
 
+def _validate_filters(filters):
+    if not filters.get("company"):
+        frappe.throw(_("Company is required"))
+    if not filters.get("from_date") or not filters.get("to_date"):
+        frappe.throw(_("From Date and To Date are required"))
+    if filters.from_date > filters.to_date:
+        frappe.throw(_("From Date must be on or before To Date"))
+
+
 def execute(filters=None):
     filters = frappe._dict(filters or {})
+    _validate_filters(filters)
     columns = _get_columns(filters)
     return columns, []
 
