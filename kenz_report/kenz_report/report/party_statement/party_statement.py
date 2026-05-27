@@ -158,20 +158,38 @@ def _customer_contact_info(customer):
 
 
 def _customers_in_data(filters, body_rows):
-    """Return the set of customers in the data, respecting the customer filter."""
+    """Return the set of customers in the data, respecting the customer filter.
+
+    When a scope filter (customer_group / territory / sales_person) is active,
+    opening-balance-only customers are also filtered so that customers outside
+    the requested scope are not included.
+    """
     if filters.get("customer"):
         return [filters.customer]
     body_customers = {r["customer"] for r in body_rows if r.get("customer")}
     receivable = _get_receivable_account(filters.company)
-    opening_customers = frappe.db.sql_list("""
-        SELECT DISTINCT party FROM `tabGL Entry`
-        WHERE company = %(company)s
-          AND account = %(receivable_account)s
-          AND party_type = 'Customer'
-          AND posting_date < %(from_date)s
-          AND is_cancelled = 0
-    """, {"company": filters.company, "receivable_account": receivable,
-          "from_date": filters.from_date})
+    extra_join, extra_where = _customer_scope_join_and_clause(filters, "gle.party")
+    sql = f"""
+        SELECT DISTINCT gle.party
+        FROM `tabGL Entry` gle
+        LEFT JOIN `tabCustomer` c ON c.name = gle.party
+        {extra_join}
+        WHERE gle.company = %(company)s
+          AND gle.account = %(receivable_account)s
+          AND gle.party_type = 'Customer'
+          AND gle.posting_date < %(from_date)s
+          AND gle.is_cancelled = 0
+          {extra_where}
+    """
+    params = {
+        "company": filters.company,
+        "receivable_account": receivable,
+        "from_date": filters.from_date,
+    }
+    for key in ("customer_group", "territory", "sales_person"):
+        if filters.get(key):
+            params[key] = filters[key]
+    opening_customers = frappe.db.sql_list(sql, params)
     return sorted(body_customers | set(opening_customers))
 
 
