@@ -94,6 +94,38 @@ def _make_sales_invoice(customer, company, posting_date, amount, is_return=0, re
     return si
 
 
+def _make_journal_entry(customer, company, posting_date, debit_amount=0, credit_amount=0):
+    receivable = frappe.get_cached_value("Company", company, "default_receivable_account")
+    offset = frappe.db.get_value(
+        "Account",
+        {"company": company, "account_type": "Bank", "is_group": 0},
+        "name",
+    ) or frappe.db.get_value(
+        "Account", {"company": company, "account_type": "Cash", "is_group": 0}, "name"
+    )
+    je = frappe.get_doc({
+        "doctype": "Journal Entry",
+        "company": company,
+        "posting_date": posting_date,
+        "voucher_type": "Journal Entry",
+        "accounts": [
+            {
+                "account": receivable, "party_type": "Customer", "party": customer,
+                "debit_in_account_currency": debit_amount,
+                "credit_in_account_currency": credit_amount,
+            },
+            {
+                "account": offset,
+                "debit_in_account_currency": credit_amount,
+                "credit_in_account_currency": debit_amount,
+            },
+        ],
+    })
+    je.insert(ignore_permissions=True)
+    je.submit()
+    return je
+
+
 def _make_payment_entry(customer, company, posting_date, amount, against_invoice=None):
     receivable = frappe.get_cached_value("Company", company, "default_receivable_account")
     cash = frappe.db.get_value(
@@ -229,3 +261,19 @@ class TestPartyStatement(FrappeTestCase):
 
         sales_row = next(r for r in data if r.get("voucher_no") == si.name)
         self.assertEqual(sales_row["paid_amount"], 150)
+
+    def test_journal_entry_appears_as_jv_row(self):
+        customer = _make_customer("JV")
+        company = self._base_filters()["company"]
+        je = _make_journal_entry(customer, company, today(), debit_amount=75)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+
+        jvs = [r for r in data if r.get("tran_type") == "JV"]
+        self.assertEqual(len(jvs), 1)
+        self.assertEqual(jvs[0]["voucher_no"], je.name)
+        self.assertEqual(jvs[0]["debit"], 75)
+        self.assertEqual(jvs[0]["credit"], 0)
+        self.assertEqual(jvs[0]["trx_amount"], 75)

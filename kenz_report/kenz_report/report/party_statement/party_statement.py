@@ -20,6 +20,44 @@ def execute(filters=None):
     return columns, data
 
 
+def _get_receivable_account(company):
+    account = frappe.get_cached_value("Company", company, "default_receivable_account")
+    if not account:
+        frappe.throw(_("Set Default Receivable Account on Company {0}").format(company))
+    return account
+
+
+def _get_journal_entry_rows(filters):
+    customer_clause = ""
+    if filters.get("customer"):
+        customer_clause = " AND jea.party = %(customer)s "
+    sql = f"""
+        SELECT jea.party AS customer,
+               c.customer_name AS customer_name,
+               je.posting_date AS posting_date,
+               'Journal Entry' AS voucher_type,
+               je.name AS voucher_no,
+               'JV' AS tran_type,
+               (jea.debit_in_account_currency + jea.credit_in_account_currency) AS trx_amount,
+               0 AS paid_amount,
+               jea.debit_in_account_currency AS debit,
+               jea.credit_in_account_currency AS credit
+        FROM `tabJournal Entry Account` jea
+        JOIN `tabJournal Entry` je ON je.name = jea.parent
+        LEFT JOIN `tabCustomer` c ON c.name = jea.party
+        WHERE je.docstatus = 1
+          AND je.company = %(company)s
+          AND jea.account = %(receivable_account)s
+          AND jea.party_type = 'Customer'
+          AND je.posting_date BETWEEN %(from_date)s AND %(to_date)s
+          {customer_clause}
+        ORDER BY je.posting_date, je.name
+    """
+    params = dict(filters)
+    params["receivable_account"] = _get_receivable_account(filters.company)
+    return frappe.db.sql(sql, params, as_dict=True)
+
+
 def _get_payment_entry_rows(filters):
     customer_clause = ""
     if filters.get("customer"):
@@ -53,6 +91,7 @@ def _get_data(filters):
     rows.extend(_get_sales_invoice_rows(filters, is_return=0))
     rows.extend(_get_sales_invoice_rows(filters, is_return=1))
     rows.extend(_get_payment_entry_rows(filters))
+    rows.extend(_get_journal_entry_rows(filters))
     return [_normalize_row(r) for r in rows]
 
 
