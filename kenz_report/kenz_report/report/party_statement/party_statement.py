@@ -31,6 +31,7 @@ def _get_journal_entry_rows(filters):
     customer_clause = ""
     if filters.get("customer"):
         customer_clause = " AND jea.party = %(customer)s "
+    extra_join, extra_where = _customer_scope_join_and_clause(filters, "jea.party")
     sql = f"""
         SELECT jea.party AS customer,
                c.customer_name AS customer_name,
@@ -45,12 +46,14 @@ def _get_journal_entry_rows(filters):
         FROM `tabJournal Entry Account` jea
         JOIN `tabJournal Entry` je ON je.name = jea.parent
         LEFT JOIN `tabCustomer` c ON c.name = jea.party
+        {extra_join}
         WHERE je.docstatus = 1
           AND je.company = %(company)s
           AND jea.account = %(receivable_account)s
           AND jea.party_type = 'Customer'
           AND je.posting_date BETWEEN %(from_date)s AND %(to_date)s
           {customer_clause}
+          {extra_where}
         ORDER BY je.posting_date, je.name
     """
     params = dict(filters)
@@ -62,6 +65,7 @@ def _get_payment_entry_rows(filters):
     customer_clause = ""
     if filters.get("customer"):
         customer_clause = " AND pe.party = %(customer)s "
+    extra_join, extra_where = _customer_scope_join_and_clause(filters, "pe.party")
     sql = f"""
         SELECT pe.party AS customer,
                c.customer_name AS customer_name,
@@ -75,12 +79,14 @@ def _get_payment_entry_rows(filters):
                pe.paid_amount AS credit
         FROM `tabPayment Entry` pe
         LEFT JOIN `tabCustomer` c ON c.name = pe.party
+        {extra_join}
         WHERE pe.docstatus = 1
           AND pe.company = %(company)s
           AND pe.party_type = 'Customer'
           AND pe.payment_type = 'Receive'
           AND pe.posting_date BETWEEN %(from_date)s AND %(to_date)s
           {customer_clause}
+          {extra_where}
         ORDER BY pe.posting_date, pe.name
     """
     return frappe.db.sql(sql, filters, as_dict=True)
@@ -239,13 +245,56 @@ def _get_data(filters):
         final.append(_closing_row(customer, customer_name,
                                   total_debit, total_credit, running))
 
+    if filters.get("show_only_with_balance"):
+        final = _drop_zero_balance_customers(final)
     return final
+
+
+def _drop_zero_balance_customers(rows):
+    blocks = {}
+    order = []
+    for r in rows:
+        cust = r.get("customer")
+        if cust not in blocks:
+            blocks[cust] = []
+            order.append(cust)
+        blocks[cust].append(r)
+    kept = []
+    for cust in order:
+        block = blocks[cust]
+        closing = next((r for r in block if r.get("is_closing")), None)
+        if closing and abs(flt(closing["balance"])) < 0.005:
+            continue
+        kept.extend(block)
+    return kept
 
 
 def _customer_filter_clause(filters, table_alias):
     if filters.get("customer"):
         return f" AND {table_alias}.customer = %(customer)s "
     return ""
+
+
+def _customer_scope_join_and_clause(filters, customer_field):
+    """Return (extra_join, extra_where) SQL fragments for the optional
+    customer_group / territory / sales_person filters. Returns ('', '') when
+    no drilldown is active or when filters.customer is set."""
+    if filters.get("customer"):
+        return "", ""
+    join = ""
+    clauses = []
+    if filters.get("customer_group"):
+        clauses.append("c.customer_group = %(customer_group)s")
+    if filters.get("territory"):
+        clauses.append("c.territory = %(territory)s")
+    if filters.get("sales_person"):
+        join = (
+            f"LEFT JOIN `tabSales Team` st "
+            f"ON st.parent = {customer_field} AND st.parenttype = 'Customer' "
+        )
+        clauses.append("st.sales_person = %(sales_person)s")
+    where = (" AND " + " AND ".join(clauses)) if clauses else ""
+    return join, where
 
 
 def _payment_amount_subquery():
@@ -262,6 +311,7 @@ def _payment_amount_subquery():
 def _get_sales_invoice_rows(filters, is_return):
     tran_type = "SALESRETURN" if is_return else "SALES"
     customer_clause = _customer_filter_clause(filters, "si")
+    extra_join, extra_where = _customer_scope_join_and_clause(filters, "si.customer")
     if is_return:
         amount_expr = "ABS(si.grand_total)"
         debit_expr = "0"
@@ -284,11 +334,14 @@ def _get_sales_invoice_rows(filters, is_return):
                {debit_expr} AS debit,
                {credit_expr} AS credit
         FROM `tabSales Invoice` si
+        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+        {extra_join}
         WHERE si.docstatus = 1
           AND si.company = %(company)s
           AND si.is_return = %(is_return)s
           AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
           {customer_clause}
+          {extra_where}
         ORDER BY si.posting_date, si.name
     """
     return frappe.db.sql(sql, {

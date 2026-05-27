@@ -356,3 +356,29 @@ class TestPartyStatement(FrappeTestCase):
         self.assertEqual(len(headers), 1)
         self.assertEqual(headers[0]["customer"], customer)
         self.assertIn("customer_name", headers[0])
+
+    def test_show_only_with_balance_drops_zero_net_customers(self):
+        customer = _make_customer("Zero")
+        company = self._base_filters()["company"]
+        si = _make_sales_invoice(customer, company, today(), 100)
+        _make_payment_entry(customer, company, today(), 100, against_invoice=si)
+
+        filters = self._base_filters()
+        filters["show_only_with_balance"] = 1
+        # customer has zero net → must not appear
+        columns, data = execute(filters)
+        customers_seen = {r.get("customer") for r in data if r.get("customer")}
+        self.assertNotIn(customer, customers_seen)
+
+    def test_customer_group_filter(self):
+        company = self._base_filters()["company"]
+        # Use the default customer_group created by _make_customer
+        customer = _make_customer("CG")
+        group = frappe.db.get_value("Customer", customer, "customer_group")
+        _make_sales_invoice(customer, company, today(), 50)
+
+        filters = self._base_filters()
+        filters["customer_group"] = group
+        columns, data = execute(filters)
+        customers_seen = {r.get("customer") for r in data if r.get("customer")}
+        self.assertIn(customer, customers_seen)
