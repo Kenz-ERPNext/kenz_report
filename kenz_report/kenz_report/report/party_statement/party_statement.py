@@ -247,6 +247,9 @@ def _get_data(filters):
 
     if filters.get("show_only_with_balance"):
         final = _drop_zero_balance_customers(final)
+    currency = frappe.get_cached_value("Company", filters.company, "default_currency")
+    for r in final:
+        r["currency"] = currency
     return final
 
 

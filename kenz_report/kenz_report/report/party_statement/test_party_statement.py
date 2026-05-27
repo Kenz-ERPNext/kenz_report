@@ -382,3 +382,15 @@ class TestPartyStatement(FrappeTestCase):
         columns, data = execute(filters)
         customers_seen = {r.get("customer") for r in data if r.get("customer")}
         self.assertIn(customer, customers_seen)
+
+    def test_currency_attached_to_rows(self):
+        customer = _make_customer("Cur")
+        company = self._base_filters()["company"]
+        _make_sales_invoice(customer, company, today(), 100)
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+        body_rows = [r for r in data if r["tran_type"] == "SALES"]
+        currency = frappe.get_cached_value("Company", company, "default_currency")
+        for r in body_rows:
+            self.assertEqual(r.get("currency"), currency)
