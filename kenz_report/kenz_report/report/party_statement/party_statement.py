@@ -23,6 +23,7 @@ def execute(filters=None):
 def _get_data(filters):
     rows = []
     rows.extend(_get_sales_invoice_rows(filters, is_return=0))
+    rows.extend(_get_sales_invoice_rows(filters, is_return=1))
     return [_normalize_row(r) for r in rows]
 
 
