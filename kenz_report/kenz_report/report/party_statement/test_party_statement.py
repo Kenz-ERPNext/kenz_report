@@ -394,3 +394,18 @@ class TestPartyStatement(FrappeTestCase):
         currency = frappe.get_cached_value("Company", company, "default_currency")
         for r in body_rows:
             self.assertEqual(r.get("currency"), currency)
+
+    def test_print_statement_endpoint_returns_html_for_each_customer(self):
+        from kenz_report.api.party_statement import print_statement
+        company = self._base_filters()["company"]
+        cust_a = _make_customer("PA")
+        cust_b = _make_customer("PB")
+        _make_sales_invoice(cust_a, company, today(), 100)
+        _make_sales_invoice(cust_b, company, today(), 200)
+
+        result = print_statement(frappe.as_json(self._base_filters()))
+        html = result["html"]
+        self.assertIn("Party Statement", html)
+        self.assertIn(cust_a, html)
+        self.assertIn(cust_b, html)
+        self.assertIn("page-break-after", html)
