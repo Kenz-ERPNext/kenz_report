@@ -247,3 +247,10 @@ app_license = "mit"
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+fixtures = [
+    {
+        "doctype": "Print Format",
+        "filters": [["name", "in", ["Party Statement"]]],
+    },
+]
+
