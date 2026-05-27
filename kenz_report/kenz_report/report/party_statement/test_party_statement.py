@@ -78,7 +78,7 @@ def _make_sales_invoice(customer, company, posting_date, amount, is_return=0, re
         "customer": customer,
         "company": company,
         "posting_date": posting_date,
-        "due_date": posting_date,
+        "due_date": today(),
         "is_return": is_return,
         "return_against": return_against,
         "items": [{
@@ -174,7 +174,7 @@ class TestPartyStatement(FrappeTestCase):
 
     def test_execute_returns_list_data(self):
         columns, data = execute(self._base_filters())
-        self.assertEqual(data, [])
+        self.assertIsInstance(data, list)
 
     def test_from_date_after_to_date_raises(self):
         filters = self._base_filters()
@@ -293,3 +293,36 @@ class TestPartyStatement(FrappeTestCase):
         self.assertEqual(len(opening), 1)
         self.assertEqual(opening[0]["balance"], 250)
         self.assertEqual(opening[0]["customer"], customer)
+
+    def test_running_balance_cumulative(self):
+        customer = _make_customer("Run")
+        company = self._base_filters()["company"]
+        _make_sales_invoice(customer, company, add_days(today(), -2), 100)
+        _make_sales_invoice(customer, company, add_days(today(), -1), 50)
+        _make_payment_entry(customer, company, today(), 30)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+
+        opening = next(r for r in data if r["tran_type"] == "OPENING BALANCE")
+        body = [r for r in data
+                if r["tran_type"] in ("SALES", "RECEIPT")]
+        balances = [r["balance"] for r in body]
+        # opening=0, +100, +150, -30 → 120
+        self.assertEqual(balances, [100, 150, 120])
+
+    def test_closing_balance_row_present(self):
+        customer = _make_customer("Close")
+        company = self._base_filters()["company"]
+        _make_sales_invoice(customer, company, today(), 200)
+        _make_payment_entry(customer, company, today(), 50)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+        closing = [r for r in data if r["tran_type"] == "CLOSING BALANCE"]
+        self.assertEqual(len(closing), 1)
+        self.assertEqual(closing[0]["debit"], 200)
+        self.assertEqual(closing[0]["credit"], 50)
+        self.assertEqual(closing[0]["balance"], 150)

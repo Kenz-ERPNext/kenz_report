@@ -129,6 +129,22 @@ def _opening_row(customer, customer_name, opening):
     }
 
 
+def _closing_row(customer, customer_name, total_debit, total_credit, balance):
+    return {
+        "customer": customer,
+        "customer_name": customer_name,
+        "posting_date": None,
+        "voucher_type": None,
+        "voucher_no": "",
+        "tran_type": "CLOSING BALANCE",
+        "trx_amount": 0.0,
+        "paid_amount": 0.0,
+        "debit": total_debit,
+        "credit": total_credit,
+        "balance": balance,
+    }
+
+
 def _get_data(filters):
     body = []
     body.extend(_get_sales_invoice_rows(filters, is_return=0))
@@ -147,10 +163,22 @@ def _get_data(filters):
     for customer in customers:
         customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
         opening = _get_opening_balance(filters, customer)
-        final.append(_opening_row(customer, customer_name, opening))
+        opening_row = _opening_row(customer, customer_name, opening)
+        final.append(opening_row)
+
         rows = sorted(body_by_customer.get(customer, []),
                       key=lambda r: (r["posting_date"], r["voucher_no"]))
+        running = opening
+        total_debit = 0.0
+        total_credit = 0.0
+        for row in rows:
+            running += row["debit"] - row["credit"]
+            row["balance"] = running
+            total_debit += row["debit"]
+            total_credit += row["credit"]
         final.extend(rows)
+        final.append(_closing_row(customer, customer_name,
+                                  total_debit, total_credit, running))
 
     return final
 
