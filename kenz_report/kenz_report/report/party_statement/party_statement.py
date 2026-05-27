@@ -20,10 +20,39 @@ def execute(filters=None):
     return columns, data
 
 
+def _get_payment_entry_rows(filters):
+    customer_clause = ""
+    if filters.get("customer"):
+        customer_clause = " AND pe.party = %(customer)s "
+    sql = f"""
+        SELECT pe.party AS customer,
+               c.customer_name AS customer_name,
+               pe.posting_date AS posting_date,
+               'Payment Entry' AS voucher_type,
+               pe.name AS voucher_no,
+               'RECEIPT' AS tran_type,
+               pe.paid_amount AS trx_amount,
+               0 AS paid_amount,
+               0 AS debit,
+               pe.paid_amount AS credit
+        FROM `tabPayment Entry` pe
+        LEFT JOIN `tabCustomer` c ON c.name = pe.party
+        WHERE pe.docstatus = 1
+          AND pe.company = %(company)s
+          AND pe.party_type = 'Customer'
+          AND pe.payment_type = 'Receive'
+          AND pe.posting_date BETWEEN %(from_date)s AND %(to_date)s
+          {customer_clause}
+        ORDER BY pe.posting_date, pe.name
+    """
+    return frappe.db.sql(sql, filters, as_dict=True)
+
+
 def _get_data(filters):
     rows = []
     rows.extend(_get_sales_invoice_rows(filters, is_return=0))
     rows.extend(_get_sales_invoice_rows(filters, is_return=1))
+    rows.extend(_get_payment_entry_rows(filters))
     return [_normalize_row(r) for r in rows]
 
 

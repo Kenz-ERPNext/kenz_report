@@ -199,3 +199,33 @@ class TestPartyStatement(FrappeTestCase):
         self.assertEqual(row["debit"], 0)
         self.assertEqual(row["credit"], 200)
         self.assertEqual(row["trx_amount"], 200)
+
+    def test_payment_entry_appears_as_receipt_row(self):
+        customer = _make_customer("PE")
+        company = self._base_filters()["company"]
+        si = _make_sales_invoice(customer, company, today(), 300)
+        pe = _make_payment_entry(customer, company, today(), 100, against_invoice=si)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+
+        receipts = [r for r in data if r.get("tran_type") == "RECEIPT"]
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(receipts[0]["voucher_no"], pe.name)
+        self.assertEqual(receipts[0]["credit"], 100)
+        self.assertEqual(receipts[0]["debit"], 0)
+        self.assertEqual(receipts[0]["trx_amount"], 100)
+
+    def test_payment_allocates_to_invoice_paid_amount(self):
+        customer = _make_customer("PEAlloc")
+        company = self._base_filters()["company"]
+        si = _make_sales_invoice(customer, company, today(), 400)
+        _make_payment_entry(customer, company, today(), 150, against_invoice=si)
+
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
+
+        sales_row = next(r for r in data if r.get("voucher_no") == si.name)
+        self.assertEqual(sales_row["paid_amount"], 150)
