@@ -1,6 +1,9 @@
 import frappe
 
-from kenz_report.kenz_report.report.party_statement.party_statement import execute
+from kenz_report.kenz_report.report.party_statement.party_statement import (
+    execute,
+    _customer_contact_info,
+)
 
 
 @frappe.whitelist()
@@ -39,17 +42,18 @@ def _group_by_customer(rows):
 
 
 def _build_print_context(filters, customer, rows):
-    header = next((r for r in rows if r.get("is_group_header")), {})
-    body = [r for r in rows if not r.get("is_group_header")]
+    body = list(rows)
     company_name = frappe.get_cached_value("Company", filters.get("company"), "company_name")
+    customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+    address, mobile = _customer_contact_info(customer)
     return {
         "company_name": company_name,
         "from_date": filters.get("from_date"),
         "to_date": filters.get("to_date"),
         "customer": customer,
-        "customer_name": header.get("customer_name") or customer,
-        "address": header.get("address_display") or "",
-        "mobile": header.get("mobile_no") or "",
+        "customer_name": customer_name,
+        "address": address or "",
+        "mobile": mobile or "",
         "rows": body,
         "frappe": frappe,
     }

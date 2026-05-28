@@ -6,6 +6,8 @@ from frappe.utils import flt
 def _validate_filters(filters):
     if not filters.get("company"):
         frappe.throw(_("Company is required"))
+    if not filters.get("customer"):
+        frappe.throw(_("Customer is required"))
     if not filters.get("from_date") or not filters.get("to_date"):
         frappe.throw(_("From Date and To Date are required"))
     if filters.from_date > filters.to_date:
@@ -112,24 +114,6 @@ def _get_opening_balance(filters, customer):
     return flt(result[0]["opening"]) if result else 0.0
 
 
-def _group_header_row(customer, customer_name, address, mobile):
-    return {
-        "customer": customer,
-        "customer_name": customer_name,
-        "address_display": address,
-        "mobile_no": mobile,
-        "posting_date": None,
-        "voucher_type": None,
-        "voucher_no": "",
-        "tran_type": "",
-        "trx_amount": 0.0,
-        "paid_amount": 0.0,
-        "debit": 0.0,
-        "credit": 0.0,
-        "balance": 0.0,
-        "is_group_header": 1,
-    }
-
 
 def _customer_contact_info(customer):
     address = ""
@@ -158,41 +142,7 @@ def _customer_contact_info(customer):
 
 
 def _customers_in_data(filters, body_rows):
-    """Return the set of customers in the data, respecting the customer filter.
-
-    When a scope filter (customer_group / territory / sales_person) is active,
-    opening-balance-only customers are also filtered so that customers outside
-    the requested scope are not included.
-    """
-    if filters.get("customer"):
-        return [filters.customer]
-    body_customers = {r["customer"] for r in body_rows if r.get("customer")}
-    receivable = _get_receivable_account(filters.company)
-    extra_join, extra_where = _customer_scope_join_and_clause(filters, "gle.party")
-    sql = f"""
-        SELECT gle.party
-        FROM `tabGL Entry` gle
-        LEFT JOIN `tabCustomer` c ON c.name = gle.party
-        {extra_join}
-        WHERE gle.company = %(company)s
-          AND gle.account = %(receivable_account)s
-          AND gle.party_type = 'Customer'
-          AND gle.posting_date < %(from_date)s
-          AND gle.is_cancelled = 0
-          {extra_where}
-        GROUP BY gle.party
-        HAVING ABS(SUM(gle.debit - gle.credit)) > 0.005
-    """
-    params = {
-        "company": filters.company,
-        "receivable_account": receivable,
-        "from_date": filters.from_date,
-    }
-    for key in ("customer_group", "territory", "sales_person"):
-        if filters.get(key):
-            params[key] = filters[key]
-    opening_customers = frappe.db.sql_list(sql, params)
-    return sorted(body_customers | set(opening_customers))
+    return [filters.customer]
 
 
 def _opening_row(customer, customer_name, opening):
@@ -246,8 +196,6 @@ def _get_data(filters):
 
     for customer in customers:
         customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
-        address, mobile = _customer_contact_info(customer)
-        final.append(_group_header_row(customer, customer_name, address, mobile))
         opening = _get_opening_balance(filters, customer)
         final.append(_opening_row(customer, customer_name, opening))
 
@@ -299,25 +247,8 @@ def _customer_filter_clause(filters, table_alias):
 
 
 def _customer_scope_join_and_clause(filters, customer_field):
-    """Return (extra_join, extra_where) SQL fragments for the optional
-    customer_group / territory / sales_person filters. Returns ('', '') when
-    no drilldown is active or when filters.customer is set."""
-    if filters.get("customer"):
-        return "", ""
-    join = ""
-    clauses = []
-    if filters.get("customer_group"):
-        clauses.append("c.customer_group = %(customer_group)s")
-    if filters.get("territory"):
-        clauses.append("c.territory = %(territory)s")
-    if filters.get("sales_person"):
-        join = (
-            f"LEFT JOIN `tabSales Team` st "
-            f"ON st.parent = {customer_field} AND st.parenttype = 'Customer' "
-        )
-        clauses.append("st.sales_person = %(sales_person)s")
-    where = (" AND " + " AND ".join(clauses)) if clauses else ""
-    return join, where
+    # With customer filter mandatory, scope joins are unnecessary.
+    return "", ""
 
 
 def _payment_amount_subquery():

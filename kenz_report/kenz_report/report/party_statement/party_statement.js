@@ -27,18 +27,7 @@ frappe.query_reports["Party Statement"] = {
 			label: __("Customer"),
 			fieldtype: "Link",
 			options: "Customer",
-		},
-		{
-			fieldname: "customer_group",
-			label: __("Customer Group"),
-			fieldtype: "Link",
-			options: "Customer Group",
-		},
-		{
-			fieldname: "territory",
-			label: __("Territory"),
-			fieldtype: "Link",
-			options: "Territory",
+			reqd: 1,
 		},
 		{
 			fieldname: "sales_person",
@@ -76,10 +65,6 @@ frappe.query_reports["Party Statement"] = {
 		if (data && (data.is_opening || data.is_closing)) {
 			value = default_formatter(value, row, column, data);
 			return `<b>${value}</b>`;
-		}
-		if (data && data.is_group_header) {
-			value = default_formatter(value, row, column, data);
-			return `<span style="background:#eef; font-weight:bold">${value}</span>`;
 		}
 		return default_formatter(value, row, column, data);
 	},

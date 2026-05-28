@@ -164,7 +164,10 @@ class TestPartyStatement(FrappeTestCase):
         }
 
     def test_execute_returns_eight_columns(self):
-        columns, data = execute(self._base_filters())
+        customer = _make_customer("Cols")
+        filters = self._base_filters()
+        filters["customer"] = customer
+        columns, data = execute(filters)
         self.assertEqual(len(columns), 8)
         fieldnames = [c["fieldname"] for c in columns]
         self.assertEqual(fieldnames, [
@@ -172,9 +175,13 @@ class TestPartyStatement(FrappeTestCase):
             "trx_amount", "paid_amount", "debit", "credit", "balance",
         ])
 
-    def test_execute_returns_list_data(self):
-        columns, data = execute(self._base_filters())
-        self.assertIsInstance(data, list)
+    def test_execute_requires_customer(self):
+        with self.assertRaises(frappe.ValidationError):
+            execute({
+                "company": self._base_filters()["company"],
+                "from_date": today(),
+                "to_date": today(),
+            })
 
     def test_from_date_after_to_date_raises(self):
         filters = self._base_filters()
@@ -327,36 +334,6 @@ class TestPartyStatement(FrappeTestCase):
         self.assertEqual(closing[0]["credit"], 50)
         self.assertEqual(closing[0]["balance"], 150)
 
-    def test_multi_customer_two_separate_blocks(self):
-        company = self._base_filters()["company"]
-        cust_a = _make_customer("MultA")
-        cust_b = _make_customer("MultB")
-        _make_sales_invoice(cust_a, company, today(), 100)
-        _make_sales_invoice(cust_b, company, today(), 200)
-
-        # No customer filter — both should appear
-        columns, data = execute(self._base_filters())
-
-        customers_seen = [r["customer"] for r in data
-                          if r["tran_type"] in ("OPENING BALANCE", "CLOSING BALANCE")]
-        # Each customer contributes 1 opening + 1 closing row
-        self.assertGreaterEqual(customers_seen.count(cust_a), 2)
-        self.assertGreaterEqual(customers_seen.count(cust_b), 2)
-
-    def test_group_header_row_carries_customer_info(self):
-        customer = _make_customer("GH")
-        company = self._base_filters()["company"]
-        _make_sales_invoice(customer, company, today(), 100)
-
-        filters = self._base_filters()
-        filters["customer"] = customer
-        columns, data = execute(filters)
-
-        headers = [r for r in data if r.get("is_group_header")]
-        self.assertEqual(len(headers), 1)
-        self.assertEqual(headers[0]["customer"], customer)
-        self.assertIn("customer_name", headers[0])
-
     def test_show_only_with_balance_drops_zero_net_customers(self):
         customer = _make_customer("Zero")
         company = self._base_filters()["company"]
@@ -364,24 +341,12 @@ class TestPartyStatement(FrappeTestCase):
         _make_payment_entry(customer, company, today(), 100, against_invoice=si)
 
         filters = self._base_filters()
+        filters["customer"] = customer
         filters["show_only_with_balance"] = 1
         # customer has zero net → must not appear
         columns, data = execute(filters)
         customers_seen = {r.get("customer") for r in data if r.get("customer")}
         self.assertNotIn(customer, customers_seen)
-
-    def test_customer_group_filter(self):
-        company = self._base_filters()["company"]
-        # Use the default customer_group created by _make_customer
-        customer = _make_customer("CG")
-        group = frappe.db.get_value("Customer", customer, "customer_group")
-        _make_sales_invoice(customer, company, today(), 50)
-
-        filters = self._base_filters()
-        filters["customer_group"] = group
-        columns, data = execute(filters)
-        customers_seen = {r.get("customer") for r in data if r.get("customer")}
-        self.assertIn(customer, customers_seen)
 
     def test_currency_attached_to_rows(self):
         customer = _make_customer("Cur")
@@ -395,32 +360,16 @@ class TestPartyStatement(FrappeTestCase):
         for r in body_rows:
             self.assertEqual(r.get("currency"), currency)
 
-    def test_print_statement_endpoint_returns_html_for_each_customer(self):
+    def test_print_statement_endpoint_returns_html(self):
         from kenz_report.api.party_statement import print_statement
+        customer = _make_customer("PE2")
         company = self._base_filters()["company"]
-        cust_a = _make_customer("PA")
-        cust_b = _make_customer("PB")
-        _make_sales_invoice(cust_a, company, today(), 100)
-        _make_sales_invoice(cust_b, company, today(), 200)
-
-        result = print_statement(frappe.as_json(self._base_filters()))
+        _make_sales_invoice(customer, company, today(), 100)
+        filters = self._base_filters()
+        filters["customer"] = customer
+        result = print_statement(frappe.as_json(filters))
         html = result["html"]
         self.assertIn("Party Statement", html)
-        self.assertIn(cust_a, html)
-        self.assertIn(cust_b, html)
-        self.assertIn("page-break-after", html)
-
-    def test_customers_with_zero_opening_and_no_body_excluded(self):
-        customer = _make_customer("ZeroNet")
-        company = self._base_filters()["company"]
-        # Use Journal Entries to post a debit and matching credit on the
-        # receivable account strictly before the report period (today-60 days).
-        # Using JEs avoids the Sales Invoice posting_date being overridden by
-        # ZATCA/ksa_compliance hooks on this site.
-        _make_journal_entry(customer, company, add_days(today(), -60), debit_amount=100)
-        _make_journal_entry(customer, company, add_days(today(), -60), credit_amount=100)
-
-        # Net opening balance for this customer = 0; no in-period activity.
-        columns, data = execute(self._base_filters())
-        customers_seen = {r.get("customer") for r in data if r.get("customer")}
-        self.assertNotIn(customer, customers_seen)
+        # Customer name should appear (looked up from Customer doctype)
+        customer_name = frappe.db.get_value("Customer", customer, "customer_name")
+        self.assertIn(customer_name, html)
