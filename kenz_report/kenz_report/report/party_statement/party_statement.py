@@ -326,11 +326,11 @@ def _get_columns(filters):
         if filters.get("company") else None
     return [
         {"label": _("TRX Date"), "fieldname": "posting_date",
-         "fieldtype": "Date", "width": 100},
+         "fieldtype": "Date", "width": 120},
         {"label": _("TRX No / Inv No"), "fieldname": "voucher_no",
-         "fieldtype": "Dynamic Link", "options": "voucher_type", "width": 140},
+         "fieldtype": "Dynamic Link", "options": "voucher_type", "width": 180},
         {"label": _("Tran-Type"), "fieldname": "tran_type",
-         "fieldtype": "Data", "width": 110},
+         "fieldtype": "Data", "width": 200},
         {"label": _("TRX Amount"), "fieldname": "trx_amount",
          "fieldtype": "Currency", "options": "currency", "width": 120},
         {"label": _("Paid Amount"), "fieldname": "paid_amount",
