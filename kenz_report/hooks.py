@@ -252,5 +252,24 @@ fixtures = [
         "doctype": "Print Format",
         "filters": [["name", "in", ["Party Statement"]]],
     },
+    {
+        "doctype": "Number Card",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "Total Receivable",
+                    "Total Payable",
+                    "Sales This Year",
+                    "Overdue Receivable",
+                    "Purchase This Year",
+                    "Collections This Month",
+                    "Active Customers",
+                    "Draft Invoices",
+                ],
+            ]
+        ],
+    },
 ]
 
