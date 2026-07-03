@@ -24,5 +24,5 @@
  "print_format_builder": 0,
  "print_format_type": "Jinja",
  "show_section_headings": 0,
- "standard": "Yes"
+ "standard": "No"
 }
