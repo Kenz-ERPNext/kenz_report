@@ -9,8 +9,16 @@ def execute(filters=None):
     data = result[1]
 
     hide_columns = [
-        # Add fieldnames you don't want
-    ]
+		"supplier_group",
+		"tax_id",
+		"payable_account",
+		"project",
+		"purchase_order",
+		"purchase_receipt",
+		"remarks",
+		"currency",
+		"rounded_total",
+	]
 
     columns = [
         c for c in columns
