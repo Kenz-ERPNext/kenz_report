@@ -8,7 +8,7 @@
  "docstatus": 0,
  "doctype": "Print Format",
  "font": "Default",
- "html": "",
+ "html": "<h2 style=\"text-align:center\">Sales Register</h2>\n\n<p>\nFrom {{ frappe.utils.formatdate(filters.from_date) }}\nTo {{ frappe.utils.formatdate(filters.to_date) }}\n</p>\n\n<table border=\"1\" width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\">\n\n<thead>\n<tr>\n    <th>Date</th>\n    <th>Invoice No</th>\n    <th>Customer</th>\n    <th>Customer Name</th>\n    <th>Tax ID</th>\n    <th>Net Total</th>\n    <th>Tax</th>\n    <th>Grand Total</th>\n    <th>Outstanding</th>\n    <th>Mode of Payment</th>\n</tr>\n</thead>\n\n<tbody>\n\n{% for row in rows %}\n\n<tr>\n\n<td>{{ frappe.utils.formatdate(row.posting_date) }}</td>\n\n<td>{{ row.voucher_no }}</td>\n\n<td>{{ row.customer }}</td>\n\n<td>{{ row.customer_name }}</td>\n\n<td>{{ row.tax_id }}</td>\n\n<td style=\"text-align:right\">{{ \"{:,.2f}\".format(row.net_total or 0) }}</td>\n\n<td style=\"text-align:right\">{{ \"{:,.2f}\".format(row.tax_total or 0) }}</td>\n\n<td style=\"text-align:right\">{{ \"{:,.2f}\".format(row.grand_total or 0) }}</td>\n\n<td style=\"text-align:right\">{{ \"{:,.2f}\".format(row.outstanding_amount or 0) }}</td>\n\n<td>{{ row.mode_of_payment or \"\" }}</td>\n\n</tr>\n\n{% endfor %}\n\n</tbody>\n\n</table>",
  "idx": 0,
  "line_breaks": 0,
  "margin_bottom": 12.0,
