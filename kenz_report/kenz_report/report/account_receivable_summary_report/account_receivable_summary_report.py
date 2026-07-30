@@ -12,7 +12,6 @@ def execute(filters=None):
     columns = result[0]
     data = result[1]
 
-    # Add Customer Name column after Customer
     columns.insert(
         2,
         {
@@ -23,7 +22,7 @@ def execute(filters=None):
         },
     )
 
-    customer_map = frappe._dict(
+    customer_map = dict(
         frappe.get_all(
             "Customer",
             fields=["name", "customer_name"],
@@ -32,10 +31,7 @@ def execute(filters=None):
     )
 
     for row in data:
-        row["customer_name"] = customer_map.get(row.get("party"), "")
+        if isinstance(row, dict):
+            row["customer_name"] = customer_map.get(row.get("party"), "")
 
-    return (
-        columns,
-        data,
-        *result[2:]
-    )
+    return columns, data
