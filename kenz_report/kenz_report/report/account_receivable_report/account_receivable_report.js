@@ -197,7 +197,7 @@ frappe.query_reports["Account Receivable Report"] = {
 
         let filters = report.get_values();
 
-        frappe.set_route("query-report", "Accounts Receivable Summary", {
+        frappe.set_route("query-report", "Account Receivable Summary Report", {
             company: filters.company,
         });
 
