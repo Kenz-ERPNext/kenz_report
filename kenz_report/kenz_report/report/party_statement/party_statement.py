@@ -38,6 +38,7 @@ def _get_journal_entry_rows(filters):
         SELECT jea.party AS customer,
                c.customer_name AS customer_name,
                je.posting_date AS posting_date,
+               je.creation AS creation,
                'Journal Entry' AS voucher_type,
                je.name AS voucher_no,
                'JV' AS tran_type,
@@ -72,6 +73,7 @@ def _get_payment_entry_rows(filters):
         SELECT pe.party AS customer,
                c.customer_name AS customer_name,
                pe.posting_date AS posting_date,
+               pe.creation AS creation,
                'Payment Entry' AS voucher_type,
                pe.name AS voucher_no,
                'RECEIPT' AS tran_type,
@@ -200,7 +202,7 @@ def _get_data(filters):
         final.append(_opening_row(customer, customer_name, opening))
 
         rows = sorted(body_by_customer.get(customer, []),
-                      key=lambda r: (r["posting_date"], r["voucher_no"]))
+                      key=lambda r: (r["posting_date"], r["creation"], r["voucher_no"]))
         running = opening
         total_debit = 0.0
         total_credit = 0.0
@@ -280,6 +282,7 @@ def _get_sales_invoice_rows(filters, is_return):
         SELECT si.customer AS customer,
                si.customer_name AS customer_name,
                si.posting_date AS posting_date,
+               si.creation AS creation,
                'Sales Invoice' AS voucher_type,
                si.name AS voucher_no,
                %(tran_type)s AS tran_type,
@@ -310,6 +313,7 @@ def _normalize_row(row):
         "customer": row.get("customer"),
         "customer_name": row.get("customer_name"),
         "posting_date": row.get("posting_date"),
+        "creation": row.get("creation"),
         "voucher_type": row.get("voucher_type"),
         "voucher_no": row.get("voucher_no"),
         "tran_type": row.get("tran_type"),
