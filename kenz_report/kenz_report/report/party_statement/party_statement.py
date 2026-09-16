@@ -322,48 +322,122 @@ def _payment_amount_subquery():
     )
 
 
+# def _get_sales_invoice_rows(filters, is_return):
+#     tran_type = "SALESRETURN" if is_return else "SALES"
+#     customer_clause = _customer_filter_clause(filters, "si")
+#     extra_join, extra_where = _customer_scope_join_and_clause(filters, "si.customer")
+#     if is_return:
+#         amount_expr = "ABS(si.grand_total)"
+#         debit_expr = "0"
+#         credit_expr = amount_expr
+#         paid_expr = "0"
+#     else:
+#         amount_expr = "si.grand_total"
+#         debit_expr = amount_expr
+#         credit_expr = "0"
+#         paid_expr = _payment_amount_subquery()
+#     sql = f"""
+#         SELECT si.customer AS customer,
+#                si.customer_name AS customer_name,
+#                si.posting_date AS posting_date,
+#                si.creation AS creation,
+#                'Sales Invoice' AS voucher_type,
+#                si.name AS voucher_no,
+#                %(tran_type)s AS tran_type,
+#                {amount_expr} AS trx_amount,
+#                {paid_expr} AS paid_amount,
+#                {debit_expr} AS debit,
+#                {credit_expr} AS credit
+#         FROM `tabSales Invoice` si
+#         LEFT JOIN `tabCustomer` c ON c.name = si.customer
+#         {extra_join}
+#         WHERE si.docstatus = 1
+#           AND si.company = %(company)s
+#           AND si.is_return = %(is_return)s
+#           AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+#           {customer_clause}
+#           {extra_where}
+#         ORDER BY si.posting_date, si.name
+#     """
+#     return frappe.db.sql(sql, {
+#         **filters,
+#         "is_return": is_return,
+#         "tran_type": tran_type,
+#     }, as_dict=True)
+
+
 def _get_sales_invoice_rows(filters, is_return):
     tran_type = "SALESRETURN" if is_return else "SALES"
+
     customer_clause = _customer_filter_clause(filters, "si")
-    extra_join, extra_where = _customer_scope_join_and_clause(filters, "si.customer")
+    extra_join, extra_where = _customer_scope_join_and_clause(
+        filters, "si.customer"
+    )
+
+    # Use Rounded Total when rounded total is enabled.
+    # If Disable Rounded Total is checked, use Grand Total.
+    rounded_amount_expr = """
+        CASE
+            WHEN IFNULL(si.disable_rounded_total, 0) = 0
+                 AND IFNULL(si.rounded_total, 0) != 0
+            THEN si.rounded_total
+            ELSE si.grand_total
+        END
+    """
+
     if is_return:
-        amount_expr = "ABS(si.grand_total)"
+        amount_expr = f"ABS({rounded_amount_expr})"
         debit_expr = "0"
         credit_expr = amount_expr
         paid_expr = "0"
     else:
-        amount_expr = "si.grand_total"
+        amount_expr = rounded_amount_expr
         debit_expr = amount_expr
         credit_expr = "0"
         paid_expr = _payment_amount_subquery()
+
     sql = f"""
-        SELECT si.customer AS customer,
-               si.customer_name AS customer_name,
-               si.posting_date AS posting_date,
-               si.creation AS creation,
-               'Sales Invoice' AS voucher_type,
-               si.name AS voucher_no,
-               %(tran_type)s AS tran_type,
-               {amount_expr} AS trx_amount,
-               {paid_expr} AS paid_amount,
-               {debit_expr} AS debit,
-               {credit_expr} AS credit
+        SELECT
+            si.customer AS customer,
+            si.customer_name AS customer_name,
+            si.posting_date AS posting_date,
+            si.creation AS creation,
+            'Sales Invoice' AS voucher_type,
+            si.name AS voucher_no,
+            %(tran_type)s AS tran_type,
+
+            {amount_expr} AS trx_amount,
+            {paid_expr} AS paid_amount,
+
+            {debit_expr} AS debit,
+            {credit_expr} AS credit
+
         FROM `tabSales Invoice` si
-        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+
+        LEFT JOIN `tabCustomer` c
+            ON c.name = si.customer
+
         {extra_join}
+
         WHERE si.docstatus = 1
           AND si.company = %(company)s
           AND si.is_return = %(is_return)s
           AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
           {customer_clause}
           {extra_where}
+
         ORDER BY si.posting_date, si.name
     """
-    return frappe.db.sql(sql, {
-        **filters,
-        "is_return": is_return,
-        "tran_type": tran_type,
-    }, as_dict=True)
+
+    return frappe.db.sql(
+        sql,
+        {
+            **filters,
+            "is_return": is_return,
+            "tran_type": tran_type,
+        },
+        as_dict=True,
+    )
 
 
 def _normalize_row(row):
