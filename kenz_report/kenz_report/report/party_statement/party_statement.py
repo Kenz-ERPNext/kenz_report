@@ -96,63 +96,71 @@ def _get_journal_entry_rows(filters):
 #     return frappe.db.sql(sql, filters, as_dict=True)
 
 
+
 def _get_payment_entry_rows(filters):
     customer_clause = ""
     if filters.get("customer"):
-        customer_clause = " AND gle.party = %(customer)s "
+        customer_clause = " AND pe.party = %(customer)s "
+
+    extra_join, extra_where = _customer_scope_join_and_clause(
+        filters, "pe.party"
+    )
 
     sql = f"""
         SELECT
-            gle.party AS customer,
+            pe.party AS customer,
             c.customer_name AS customer_name,
-            gle.posting_date AS posting_date,
+            pe.posting_date AS posting_date,
             pe.creation AS creation,
             'Payment Entry' AS voucher_type,
-            gle.voucher_no AS voucher_no,
-            'RECEIPT' AS tran_type,
+            pe.name AS voucher_no,
 
-            ABS(SUM(gle.credit - gle.debit)) AS trx_amount,
-            ABS(SUM(gle.credit - gle.debit)) AS paid_amount,
+            CASE
+                WHEN pe.payment_type = 'Receive' THEN 'RECEIPT'
+                WHEN pe.payment_type = 'Pay' THEN 'REFUND'
+            END AS tran_type,
 
-            SUM(gle.debit) AS debit,
-            SUM(gle.credit) AS credit
+            CASE
+                WHEN pe.payment_type = 'Receive'
+                    THEN pe.paid_amount
+                WHEN pe.payment_type = 'Pay'
+                    THEN pe.paid_amount
+                ELSE 0
+            END AS trx_amount,
 
-        FROM `tabGL Entry` gle
+            0 AS paid_amount,
 
-        INNER JOIN `tabPayment Entry` pe
-            ON pe.name = gle.voucher_no
+            CASE
+                WHEN pe.payment_type = 'Pay'
+                    THEN pe.paid_amount
+                ELSE 0
+            END AS debit,
+
+            CASE
+                WHEN pe.payment_type = 'Receive'
+                    THEN pe.paid_amount
+                ELSE 0
+            END AS credit
+
+        FROM `tabPayment Entry` pe
 
         LEFT JOIN `tabCustomer` c
-            ON c.name = gle.party
+            ON c.name = pe.party
 
-        WHERE gle.is_cancelled = 0
-          AND gle.docstatus = 1
-          AND gle.voucher_type = 'Payment Entry'
-          AND gle.company = %(company)s
-          AND gle.account = %(receivable_account)s
-          AND gle.party_type = 'Customer'
-          AND gle.posting_date BETWEEN %(from_date)s AND %(to_date)s
-          AND pe.docstatus = 1
-          AND pe.payment_type = 'Receive'
+        {extra_join}
+
+        WHERE pe.docstatus = 1
+          AND pe.company = %(company)s
+          AND pe.party_type = 'Customer'
+          AND pe.payment_type IN ('Receive', 'Pay')
+          AND pe.posting_date BETWEEN %(from_date)s AND %(to_date)s
           {customer_clause}
+          {extra_where}
 
-        GROUP BY
-            gle.party,
-            c.customer_name,
-            gle.posting_date,
-            pe.creation,
-            gle.voucher_no
-
-        ORDER BY
-            gle.posting_date,
-            pe.creation,
-            gle.voucher_no
+        ORDER BY pe.posting_date, pe.creation, pe.name
     """
 
-    params = dict(filters)
-    params["receivable_account"] = _get_receivable_account(filters.company)
-
-    return frappe.db.sql(sql, params, as_dict=True)
+    return frappe.db.sql(sql, filters, as_dict=True)
 
 def _get_opening_balance(filters, customer):
     sql = """
